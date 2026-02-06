@@ -1,0 +1,16 @@
+FROM oven/bun:1-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package.json .
+RUN bun install
+
+# Copy source
+COPY . .
+
+# Create data directory for persistent storage
+RUN mkdir -p /app/data/uploads
+
+# Run the scheduler
+CMD ["bun", "run", "src/scheduler/cron.ts"]
