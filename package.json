@@ -1,15 +1,27 @@
 {
   "name": "claude-telegram-relay",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "start": "bun run src/relay.ts",
-    "dev": "bun run --watch src/relay.ts"
+    "dev": "bun run --watch src/relay.ts",
+    "scheduler": "bun run src/scheduler/cron.ts",
+    "skill:youtube": "bun run src/skills/youtube-skill.ts",
+    "skill:facebook": "bun run src/skills/facebook-skill.ts",
+    "skill:tiktok": "bun run src/skills/tiktok-skill.ts",
+    "skill:scheduler": "bun run src/skills/scheduler-skill.ts"
   },
   "dependencies": {
-    "grammy": "^1.21.1"
+    "grammy": "^1.21.1",
+    "better-sqlite3": "^9.4.0",
+    "googleapis": "^133.0.0",
+    "axios": "^1.6.7",
+    "node-cron": "^3.0.3",
+    "open": "^10.0.3"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/node-cron": "^3.0.11",
+    "@types/better-sqlite3": "^7.6.8"
   }
 }

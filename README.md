@@ -1,19 +1,65 @@
-# Claude Code Telegram Relay
+# Claude Code Telegram Relay - Social Media Agent
 
-**A pattern for running Claude Code as an always-on Telegram bot.**
+**A multi-platform social media publishing agent powered by Claude Code.**
 
-> **This is a reference implementation, not a copy-paste solution.** Take the patterns here and build your own system tailored to your needs.
+Publish to YouTube, Facebook, Instagram, and TikTok directly from Telegram using natural language commands.
 
 ## What This Is
 
-A minimal relay that connects Telegram to Claude Code CLI. You send a message on Telegram, the relay spawns `claude -p`, and sends the response back. That's it.
+A social media publishing agent that:
+- **Preserves the core relay pattern**: Telegram → Claude → Skills
+- **Adds platform-specific skills**: YouTube, Facebook, Instagram, TikTok
+- **Uses natural language**: Claude decides which platform/skill to use
+- **Supports scheduled posting**: Persistent queue with cron-based execution
+- **Handles OAuth2 authentication**: Silent refresh + manual fallback
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   Telegram   │────▶│    Relay     │────▶│  Claude CLI  │
-│    (you)     │◀────│  (always on) │◀────│   (spawned)  │
-└──────────────┘     └──────────────┘     └──────────────┘
+┌──────────────┐     ┌──────────────┐     ┌─────────────────────────────────────┐
+│   Telegram   │────▶│    Relay     │────▶│  Claude CLI (decides action)       │
+│    (you)     │◀────│  (relay.ts)  │◀────│                                     │
+└──────────────┘     └──────────────┘     └─────────────────────────────────────┘
+                                                          │
+                                                          ▼
+                                    ┌─────────────────────────────────────────┐
+                                    │  Claude outputs structured commands:   │
+                                    │  - "SKILL:youtube:upload <json>"       │
+                                    │  - "SKILL:facebook:post <json>"        │
+                                    │  - "SKILL:scheduler:queue <json>"      │
+                                    └─────────────────────────────────────────┘
+                                                          │
+                                                          ▼
+                                    ┌─────────────────────────────────────────┐
+                                    │  Relay parses response & spawns skill   │
+                                    │  via shell: bun run src/skills/youtube  │
+                                    └─────────────────────────────────────────┘
+                                                          │
+                              ┌───────────────────────────┼───────────────────────────┐
+                              ▼                           ▼                           ▼
+                     ┌──────────────┐            ┌──────────────┐            ┌──────────────┐
+                     │   YouTube    │            │ Facebook/IG  │            │    TikTok    │
+                     │   (OAuth2)   │            │  (Graph API) │            │  (API + App) │
+                     └──────────────┘            └──────────────┘            └──────────────┘
 ```
+
+## Features
+
+### Supported Platforms
+
+| Platform | Actions | Authentication |
+|----------|---------|----------------|
+| **YouTube** | Upload videos, check channel info | OAuth2 (Google) |
+| **Facebook** | Post to pages, schedule posts | OAuth2 (Meta) |
+| **Instagram** | Post photos (via Facebook connection) | OAuth2 (Meta) |
+| **TikTok** | Upload videos (requires mobile confirmation) | OAuth2 (TikTok) |
+
+### Key Capabilities
+
+- **Natural language commands**: "Upload this video to YouTube as 'My Tutorial'"
+- **Scheduled posting**: "Schedule this for Friday 6pm on YouTube"
+- **Optimal timing recommendations**: "What's the best time to post on Instagram?"
+- **Persistent queue**: SQLite-based job queue with automatic retry
+- **OAuth2 with auto-refresh**: Tokens refreshed automatically, manual auth fallback
+- **Media lifecycle management**: Files cleaned up after posting or retained for scheduled jobs
 
 ## Why This Approach?
 
@@ -44,10 +90,13 @@ bun install
 
 # Copy and edit environment variables
 cp .env.example .env
-# Edit .env with your tokens
+# Edit .env with your tokens (see Configuration section below)
 
-# Run
+# Run the bot
 bun run src/relay.ts
+
+# In another terminal, run the scheduler (for scheduled posts)
+bun run src/scheduler/cron.ts
 ```
 
 ## Cross-Platform "Always On" Setup
@@ -145,42 +194,111 @@ nssm start claude-relay
 
 ```
 src/
-  relay.ts          # Core relay (what you customize)
+  relay.ts                    # Enhanced relay with skill parsing
+  platforms/
+    types.ts                  # Shared TypeScript interfaces
+    youtube.ts                # YouTube Data API v3
+    facebook.ts               # Facebook Graph API (pages + IG)
+    tiktok.ts                 # TikTok Content Posting API
+  auth/
+    token-manager.ts          # OAuth2 token storage & refresh
+    oauth-server.ts           # Local callback server for OAuth flow
+  skills/
+    youtube-skill.ts          # CLI entry point for YouTube operations
+    facebook-skill.ts         # CLI entry point for FB/IG operations
+    tiktok-skill.ts           # CLI entry point for TikTok operations
+    scheduler-skill.ts        # CLI entry point for scheduling
+  scheduler/
+    queue.ts                  # Job queue management
+    cron.ts                   # Cron-based job runner
+  storage/
+    db.ts                     # SQLite wrapper for posts & tokens
+  editorial/
+    recommendations.ts        # Optimal posting time recommendations
 
 examples/
-  morning-briefing.ts   # Scheduled daily summary
-  smart-checkin.ts      # Proactive check-ins
-  memory.ts             # Persistent memory pattern
-  supabase-schema.sql   # Optional: cloud persistence
+  morning-briefing.ts         # Scheduled daily summary
+  smart-checkin.ts            # Proactive check-ins
+  memory.ts                   # Persistent memory pattern
+  supabase-schema.sql         # Optional: cloud persistence
 
 daemon/
-  launchagent.plist     # macOS daemon config
-  claude-relay.service  # Linux systemd config
+  launchagent.plist           # macOS daemon config
+  claude-relay.service        # Linux systemd config
 ```
+
+## Usage Examples
+
+### Authentication
+
+Before posting to any platform, you need to authenticate:
+
+```
+/auth youtube
+/auth facebook
+/auth tiktok
+```
+
+Click the provided link to authorize the app.
+
+### Posting Content
+
+**YouTube:**
+- Send a video with caption: "Upload this to YouTube as 'My Tutorial' with description 'Learn how to...'"
+- "Post this video to YouTube as unlisted"
+
+**Facebook:**
+- "Post 'Hello world' to my Facebook page PAGE_ID"
+- Send an image with: "Share this on Facebook with caption 'Check this out!'"
+
+**Instagram:**
+- Send a photo with: "Post this to Instagram with caption 'Beautiful sunset #nature'"
+
+**TikTok:**
+- Send a video with: "Upload this to TikTok with title 'My dance routine'"
+
+### Scheduling Posts
+
+- "Schedule this video for Friday 6pm on YouTube"
+- "Queue this post for tomorrow morning on Facebook"
+
+### Recommendations
+
+- "What's the best time to post on Instagram?"
+- "When should I post on YouTube?"
+- `/recommend all` - Get recommendations for all platforms
+
+### Queue Management
+
+- `/queue` or `/queue status` - Show queue statistics
+- `/queue pending` - Show pending jobs
 
 ## The Core Pattern
 
-The relay does three things:
+The relay does four things:
 
 1. **Listen** for Telegram messages
 2. **Spawn** Claude CLI with the message
-3. **Send** the response back
+3. **Parse** SKILL commands from Claude's response
+4. **Execute** the appropriate skill and return results
 
 ```typescript
 // Simplified core pattern
 bot.on("message:text", async (ctx) => {
   const response = await spawnClaude(ctx.message.text);
-  await ctx.reply(response);
+  const processedResponse = await parseAndExecuteSkill(response, ctx);
+  await ctx.reply(processedResponse);
 });
 
-async function spawnClaude(prompt: string): Promise<string> {
-  const proc = spawn(["claude", "-p", prompt, "--output-format", "text"]);
-  const output = await new Response(proc.stdout).text();
-  return output;
+async function parseAndExecuteSkill(response: string, ctx: Context): Promise<string> {
+  const skillMatch = response.match(/SKILL:(\w+):(\w+)\s*(.*)/);
+  if (!skillMatch) return response;
+
+  const [, platform, action, argsJson] = skillMatch;
+  const result = await executeSkill(platform, action, argsJson);
+  return formatResult(result);
 }
 ```
-
-That's the entire pattern. Everything else is enhancement.
 
 ## Enhancements You Can Add
 
@@ -261,7 +379,9 @@ Pattern for remembering facts and goals across sessions:
 - Supabase (cloud, searchable)
 - Any database you prefer
 
-## Environment Variables
+## Configuration
+
+### Environment Variables
 
 ```bash
 # Required
@@ -272,12 +392,55 @@ TELEGRAM_USER_ID=         # From @userinfobot (for security)
 CLAUDE_PATH=claude        # Path to claude CLI (if not in PATH)
 RELAY_DIR=~/.claude-relay # Working directory for temp files
 
+# OAuth Server
+OAUTH_PORT=3000           # Port for OAuth callback server
+
+# YouTube OAuth2 (get from Google Cloud Console)
+YOUTUBE_CLIENT_ID=
+YOUTUBE_CLIENT_SECRET=
+YOUTUBE_REDIRECT_URI=http://localhost:3000/auth/youtube/callback
+
+# Facebook/Instagram OAuth2 (get from Meta for Developers)
+FACEBOOK_APP_ID=
+FACEBOOK_APP_SECRET=
+FACEBOOK_REDIRECT_URI=http://localhost:3000/auth/facebook/callback
+
+# TikTok OAuth2 (get from TikTok for Developers)
+TIKTOK_CLIENT_KEY=
+TIKTOK_CLIENT_SECRET=
+TIKTOK_REDIRECT_URI=http://localhost:3000/auth/tiktok/callback
+
+# Scheduler Settings
+SCHEDULER_CHECK_INTERVAL=60000  # 1 minute in ms
+MAX_RETRIES=3
+RETENTION_DAYS=7                # Days to keep media files after posting
+
 # Optional - Features
 SUPABASE_URL=             # For cloud memory persistence
 SUPABASE_ANON_KEY=        # For cloud memory persistence
 GEMINI_API_KEY=           # For voice transcription
 ELEVENLABS_API_KEY=       # For voice responses
 ```
+
+### Getting OAuth Credentials
+
+**YouTube:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project
+3. Enable YouTube Data API v3
+4. Create OAuth 2.0 credentials (Desktop application type)
+5. Add `http://localhost:3000/auth/youtube/callback` as authorized redirect URI
+
+**Facebook/Instagram:**
+1. Go to [Meta for Developers](https://developers.facebook.com/)
+2. Create a new app
+3. Add Facebook Login and Instagram Graph API products
+4. Configure OAuth settings with redirect URI `http://localhost:3000/auth/facebook/callback`
+
+**TikTok:**
+1. Go to [TikTok for Developers](https://developers.tiktok.com/)
+2. Create a new app
+3. Configure OAuth redirect URI as `http://localhost:3000/auth/tiktok/callback`
 
 ## FAQ
 
